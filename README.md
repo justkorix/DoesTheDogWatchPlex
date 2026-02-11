@@ -29,7 +29,7 @@ Warnings are filtered by vote count and confidence ratio, so you only see things
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/YOURUSERNAME/DoesTheDogWatchPlex.git
+git clone https://github.com/justkorix/DoesTheDogWatchPlex.git
 cd DoesTheDogWatchPlex
 ```
 
