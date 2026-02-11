@@ -1,7 +1,7 @@
 services:
   doesthedogwatchplex:
     build: .
-    # image: ghcr.io/YOURUSERNAME/doesthedogwatchplex:latest  # uncomment after publishing
+    # image: ghcr.io/justkorix/doesthedogwatchplex:latest  # uncomment after publishing
     environment:
       - PLEX_URL=http://plex:32400        # or http://HOST_IP:32400
       - PLEX_TOKEN=your-plex-token

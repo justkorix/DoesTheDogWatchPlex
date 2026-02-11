@@ -29,7 +29,7 @@ Warnings are filtered by vote count and confidence ratio, so you only see things
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/YOURUSERNAME/DoesTheDogWatchPlex.git
+git clone https://github.com/justkorix/DoesTheDogWatchPlex.git
 cd DoesTheDogWatchPlex
 ```
 
@@ -54,7 +54,7 @@ docker run --rm \
   -e PLEX_TOKEN=your-plex-token \
   -e DTDD_API_KEY=your-dtdd-api-key \
   -v dtdd-cache:/app/.cache \
-  ghcr.io/YOURUSERNAME/doesthedogwatchplex --dry-run
+  ghcr.io/justkorix/doesthedogwatchplex --dry-run
 ```
 
 Set `SCHEDULE=86400` to re-scan every 24 hours, or omit it to run once and exit.
