@@ -1,0 +1,38 @@
+# DoesTheDogWatchPlex Configuration
+# Copy this file to config.py and fill in your details.
+
+# --- Plex Settings ---
+# Your Plex server URL (include port if non-standard)
+PLEX_URL = "http://localhost:32400"
+
+# Your Plex authentication token
+# Find it: open Plex web, inspect any request, look for X-Plex-Token parameter
+# Or see: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
+PLEX_TOKEN = "your-plex-token-here"
+
+# Library names to process (case-sensitive, as they appear in Plex)
+# Set to None to process ALL movie libraries
+PLEX_LIBRARIES = ["Movies"]
+
+# --- DoesTheDogDie Settings ---
+# Get your API key: sign up at doesthedogdie.com, then visit /profile
+DTDD_API_KEY = "your-dtdd-api-key-here"
+
+# --- Behavior ---
+# Separator line between original summary and content warnings
+SEPARATOR = "\n\n———— Content Warnings (via DoesTheDogDie.com) ————"
+
+# Minimum yes votes for a warning to be included (filters out low-confidence entries)
+MIN_YES_VOTES = 3
+
+# Only show warnings where "yes" votes outnumber "no" votes by this ratio
+MIN_YES_RATIO = 0.6
+
+# How long to cache DTDD results locally (seconds). Default: 7 days
+CACHE_TTL = 60 * 60 * 24 * 7
+
+# Rate limit delay between DTDD API calls (seconds) — be kind to their server
+API_DELAY = 1.0
+
+# Dry run mode: if True, prints what would change without modifying Plex
+DRY_RUN = False
