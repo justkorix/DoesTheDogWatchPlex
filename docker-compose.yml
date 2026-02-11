@@ -1,0 +1,20 @@
+services:
+  doesthedogwatchplex:
+    build: .
+    # image: ghcr.io/YOURUSERNAME/doesthedogwatchplex:latest  # uncomment after publishing
+    environment:
+      - PLEX_URL=http://plex:32400        # or http://HOST_IP:32400
+      - PLEX_TOKEN=your-plex-token
+      - DTDD_API_KEY=your-dtdd-api-key
+      - PLEX_LIBRARIES=Movies              # comma-separated, or leave empty for all
+      - MIN_YES_VOTES=5
+      - MIN_YES_RATIO=0.7
+      - SHOW_SAFE_TOPICS=False
+      - DRY_RUN=False
+      - SCHEDULE=86400                      # run every 24h. Remove for one-shot.
+    volumes:
+      - dtdd-cache:/app/.cache              # persist API cache between runs
+    restart: unless-stopped
+
+volumes:
+  dtdd-cache:

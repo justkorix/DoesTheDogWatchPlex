@@ -26,7 +26,42 @@ Warnings are filtered by vote count and confidence ratio, so you only see things
 
 ## Setup
 
-**Prerequisites:** Python 3.10+, a Plex server, a DoesTheDogDie.com account.
+### Docker (recommended)
+
+```bash
+git clone https://github.com/YOURUSERNAME/DoesTheDogWatchPlex.git
+cd DoesTheDogWatchPlex
+```
+
+Edit `docker-compose.yml` with your Plex URL, token, and DTDD API key, then:
+
+```bash
+# Preview first
+docker compose run --rm doesthedogwatchplex --dry-run
+
+# Run once
+docker compose run --rm doesthedogwatchplex
+
+# Run as a background service (re-scans every 24h by default)
+docker compose up -d
+```
+
+Or run directly with `docker run`:
+
+```bash
+docker run --rm \
+  -e PLEX_URL=http://YOUR_PLEX_IP:32400 \
+  -e PLEX_TOKEN=your-plex-token \
+  -e DTDD_API_KEY=your-dtdd-api-key \
+  -v dtdd-cache:/app/.cache \
+  ghcr.io/YOURUSERNAME/doesthedogwatchplex --dry-run
+```
+
+Set `SCHEDULE=86400` to re-scan every 24 hours, or omit it to run once and exit.
+
+### Manual (no Docker)
+
+**Prerequisites:** Python 3.7+, a Plex server, a DoesTheDogDie.com account.
 
 ```bash
 # Clone or copy the files to your server
@@ -90,14 +125,16 @@ Add a line like this to run nightly at 3am:
 
 All settings are in `config.py`. Key options:
 
-| Setting | Default | Description |
-|---|---|---|
-| `PLEX_LIBRARIES` | `["Movies"]` | Which libraries to process. `None` = all movie libraries |
-| `MIN_YES_VOTES` | `3` | Minimum "yes" votes to include a warning |
-| `MIN_YES_RATIO` | `0.6` | Minimum ratio of yes/(yes+no) to flag a warning |
-| `API_DELAY` | `1.0` | Seconds between DTDD API calls |
-| `CACHE_TTL` | `604800` | Cache duration in seconds (default: 7 days) |
-| `DRY_RUN` | `False` | Set to `True` to preview without writing |
+| Setting | Env Var | Default | Description |
+|---|---|---|---|
+| `PLEX_LIBRARIES` | `PLEX_LIBRARIES` | `["Movies"]` | Which libraries to process. `None`/empty = all movie libraries |
+| `MIN_YES_VOTES` | `MIN_YES_VOTES` | `5` | Minimum "yes" votes to include a warning |
+| `MIN_YES_RATIO` | `MIN_YES_RATIO` | `0.7` | Minimum ratio of yes/(yes+no) to flag a warning |
+| `SHOW_SAFE_TOPICS` | `SHOW_SAFE_TOPICS` | `False` | Include the ✅ "safe" list (e.g., "no dogs die") |
+| `API_DELAY` | - | `1.0` | Seconds between DTDD API calls |
+| `CACHE_TTL` | - | `604800` | Cache duration in seconds (default: 7 days) |
+| `DRY_RUN` | `DRY_RUN` | `False` | Set to `True` to preview without writing |
+| - | `SCHEDULE` | - | Docker only: seconds between re-runs (e.g., `86400` for daily) |
 
 ## How It Works
 
