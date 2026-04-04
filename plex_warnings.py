@@ -18,6 +18,12 @@ import time
 
 from plexapi.server import PlexServer
 
+# Maps PLEX_LIBRARY_TYPES strings to Plex internal type names
+_LIBRARY_TYPE_MAP = {
+    "movies": "movie",
+    "tv_shows": "show",
+}
+
 from dtdd import DTDDClient
 
 try:
@@ -113,6 +119,23 @@ def format_warnings(media_data: dict) -> str | None:
     return "\n".join(lines)
 
 
+def _extract_external_ids(item) -> dict[str, str]:
+    """Extract known external IDs from a Plex item's guids.
+
+    Returns a dict with any of: 'imdb', 'tvdb'
+    """
+    ids = {}
+    try:
+        for guid in item.guids:
+            if guid.id.startswith("imdb://"):
+                ids["imdb"] = guid.id.replace("imdb://", "")
+            elif guid.id.startswith("tvdb://"):
+                ids["tvdb"] = guid.id.replace("tvdb://", "")
+    except Exception:
+        pass
+    return ids
+
+
 def match_movie(dtdd: DTDDClient, movie) -> dict | None:
     """Try to match a Plex movie to a DTDD entry.
 
@@ -125,19 +148,11 @@ def match_movie(dtdd: DTDDClient, movie) -> dict | None:
     """
     title = movie.title
     year = movie.year
+    ext_ids = _extract_external_ids(movie)
 
-    # Try IMDB ID first (available via guids on modern Plex)
-    imdb_id = None
-    try:
-        for guid in movie.guids:
-            if guid.id.startswith("imdb://"):
-                imdb_id = guid.id.replace("imdb://", "")
-                break
-    except Exception:
-        pass
-
-    if imdb_id:
-        results = dtdd.search_by_imdb(imdb_id)
+    # Try IMDB ID first
+    if "imdb" in ext_ids:
+        results = dtdd.search_by_imdb(ext_ids["imdb"])
         if results:
             return dtdd.get_media(results[0]["id"])
 
@@ -204,40 +219,175 @@ def process_movie(dtdd: DTDDClient, movie, dry_run: bool = False) -> bool:
         return False
 
 
-def clear_warnings(plex: PlexServer, library_names: list[str] | None):
-    """Remove all DTDD content warnings from movie summaries."""
-    libraries = get_libraries(plex, library_names)
+def match_show(dtdd: DTDDClient, show) -> dict | None:
+    """Match a Plex show to DTDD and return its full media data.
+
+    Strategy:
+    1. Search by IMDB ID if available
+    2. Fall back to title search, matching on itemType 'TV Show' and release year
+    3. First 'TV Show' result as last resort
+
+    Returns the full DTDD media data dict (with all episode stats), or None.
+    """
+    ext_ids = _extract_external_ids(show)
+
+    if "imdb" in ext_ids:
+        results = dtdd.search_by_imdb(ext_ids["imdb"])
+        if results:
+            return dtdd.get_media(results[0]["id"])
+
+    results = dtdd.search(show.title)
+    if not results:
+        return None
+
+    tv_results = [r for r in results if r.get("itemType", {}).get("name") == "TV Show"]
+
+    # Try to match by year within TV results
+    if show.year:
+        for item in tv_results:
+            if str(show.year) == str(item.get("releaseYear", "")):
+                return dtdd.get_media(item["id"])
+
+    # First TV Show result
+    if tv_results:
+        return dtdd.get_media(tv_results[0]["id"])
+
+    return None
+
+
+def filter_episode_stats(all_stats: list, season: int, episode: int) -> list:
+    """Filter show-level topicItemStats down to a specific season/episode."""
+    return [
+        stat for stat in all_stats
+        if stat.get("ratingIndex1") == season and stat.get("ratingIndex2") == episode
+    ]
+
+
+def process_episode(episode, show_media_data: dict, dry_run: bool = False) -> bool:
+    """Process a single episode using pre-fetched show media data.
+
+    Filters the show's topicItemStats to this episode's season/episode numbers,
+    then formats and writes warnings to the episode summary.
+    Returns True if the summary was updated.
+    """
+    season_num = episode.parentIndex
+    episode_num = episode.index
+    label = f"S{season_num:02d}E{episode_num:02d}"
+    if episode.title:
+        label += f" - {episode.title}"
+
+    all_stats = show_media_data.get("topicItemStats", [])
+    episode_stats = filter_episode_stats(all_stats, season_num, episode_num)
+
+    if not episode_stats:
+        print(f"    – {label} — no episode data on DTDD")
+        return False
+
+    warning_text = format_warnings({"topicItemStats": episode_stats})
+    if not warning_text:
+        print(f"    – {label} — no significant warnings")
+        return False
+
+    original_summary = episode.summary or ""
+    clean_summary = strip_warnings(original_summary)
+    new_summary = clean_summary + get_separator() + "\n" + warning_text
+
+    if dry_run:
+        print(f"    ✓ {label} — would add warnings:")
+        for line in warning_text.split("\n"):
+            print(f"        {line}")
+        return True
+
+    try:
+        episode.editSummary(new_summary)
+        print(f"    ✓ {label} — warnings added")
+        return True
+    except Exception as e:
+        print(f"    ✗ {label} — failed to update: {e}")
+        return False
+
+
+def process_show(dtdd: DTDDClient, show, dry_run: bool = False) -> tuple[int, int]:
+    """Process all episodes of a show. Returns (processed, updated) episode counts.
+
+    Fetches show data once from DTDD, then filters in memory per episode.
+    """
+    print(f"  {show.title}")
+
+    try:
+        show_media_data = match_show(dtdd, show)
+    except Exception as e:
+        print(f"    ✗ API error: {e}")
+        return 0, 0
+
+    if not show_media_data:
+        print(f"    – not found on DTDD")
+        return 0, 0
+
+    matched_name = show_media_data.get("item", {}).get("name", "unknown")
+    matched_id = show_media_data.get("item", {}).get("id", "?")
+    print(f"    → matched: \"{matched_name}\" (DTDD id: {matched_id})")
+
+    processed = 0
+    updated = 0
+    for season in show.seasons():
+        for episode in season.episodes():
+            processed += 1
+            if process_episode(episode, show_media_data, dry_run=dry_run):
+                updated += 1
+    return processed, updated
+
+
+def clear_warnings(plex: PlexServer, library_names: list[str] | None, library_types: list[str] | None = None):
+    """Remove all DTDD content warnings from library summaries."""
+    libraries = get_libraries(plex, library_names, library_types)
     total_cleared = 0
 
     for lib in libraries:
         print(f"\nClearing warnings from: {lib.title}")
-        for movie in lib.all():
-            original = movie.summary or ""
-            cleaned = strip_warnings(original)
-            if cleaned != original:
-                movie.editSummary(cleaned)
-                print(f"  ✓ {movie.title} — warnings removed")
-                total_cleared += 1
+        if lib.type == "show":
+            for show in lib.all():
+                for season in show.seasons():
+                    for episode in season.episodes():
+                        original = episode.summary or ""
+                        cleaned = strip_warnings(original)
+                        if cleaned != original:
+                            episode.editSummary(cleaned)
+                            label = f"S{episode.parentIndex:02d}E{episode.index:02d}"
+                            print(f"  ✓ {show.title} {label} — warnings removed")
+                            total_cleared += 1
+        else:
+            for movie in lib.all():
+                original = movie.summary or ""
+                cleaned = strip_warnings(original)
+                if cleaned != original:
+                    movie.editSummary(cleaned)
+                    print(f"  ✓ {movie.title} — warnings removed")
+                    total_cleared += 1
 
-    print(f"\nDone. Cleared warnings from {total_cleared} movie(s).")
+    print(f"\nDone. Cleared warnings from {total_cleared} item(s).")
 
 
-def get_libraries(plex: PlexServer, library_names: list[str] | None):
-    """Get movie libraries to process."""
+def get_libraries(plex: PlexServer, library_names: list[str] | None, library_types: list[str] | None = None):
+    """Get libraries to process, filtered by type and optional name list."""
+    if library_types is None:
+        library_types = ["movies"]
+    type_values = {_LIBRARY_TYPE_MAP[lt] for lt in library_types if lt in _LIBRARY_TYPE_MAP}
+
     if library_names:
         libraries = []
         for name in library_names:
             try:
                 lib = plex.library.section(name)
-                if lib.type == "movie":
+                if lib.type in type_values:
                     libraries.append(lib)
                 else:
-                    print(f"Warning: '{name}' is not a movie library (type: {lib.type}), skipping.")
+                    print(f"Warning: '{name}' has type '{lib.type}', not in PLEX_LIBRARY_TYPES, skipping.")
             except Exception:
                 print(f"Warning: Library '{name}' not found, skipping.")
         return libraries
     else:
-        return [s for s in plex.library.sections() if s.type == "movie"]
+        return [s for s in plex.library.sections() if s.type in type_values]
 
 
 def main():
@@ -301,10 +451,11 @@ def main():
         sys.exit(1)
 
     library_names = getattr(config, "PLEX_LIBRARIES", None)
+    library_types = getattr(config, "PLEX_LIBRARY_TYPES", None)
 
     # Handle clear mode
     if args.clear:
-        clear_warnings(plex, library_names)
+        clear_warnings(plex, library_names, library_types)
         return
 
     # Initialize DTDD client
@@ -319,7 +470,11 @@ def main():
 
     # Process single movie or all libraries
     if args.movie:
-        libraries = get_libraries(plex, library_names)
+        libraries = get_libraries(plex, library_names, library_types)
+        print("Libraries to search:")
+        for lib in libraries:
+            print(f"  - {lib.title}")
+        print()
         found = False
         for lib in libraries:
             results = lib.search(title=args.movie)
@@ -330,31 +485,45 @@ def main():
             print(f"Movie '{args.movie}' not found in Plex.")
         return
 
-    # Process all movies in configured libraries
-    libraries = get_libraries(plex, library_names)
+    # Process all items in configured libraries
+    libraries = get_libraries(plex, library_names, library_types)
     if not libraries:
-        print("No movie libraries found to process.")
+        print("No libraries found to process.")
         sys.exit(1)
+
+    print("Libraries to process:")
+    for lib in libraries:
+        items = lib.all()
+        item_label = "shows" if lib.type == "show" else "movies"
+        print(f"  - {lib.title} ({len(items)} {item_label})")
+    print()
 
     total_processed = 0
     total_updated = 0
     start_time = time.time()
 
     for lib in libraries:
-        movies = lib.all()
-        print(f"\nProcessing: {lib.title} ({len(movies)} movies)")
+        items = lib.all()
+        item_label = "shows" if lib.type == "show" else "movies"
+        print(f"\nProcessing: {lib.title} ({len(items)} {item_label})")
         print("-" * 50)
 
-        for movie in movies:
-            total_processed += 1
-            if process_movie(dtdd, movie, dry_run=dry_run):
-                total_updated += 1
+        if lib.type == "show":
+            for item in items:
+                p, u = process_show(dtdd, item, dry_run=dry_run)
+                total_processed += p
+                total_updated += u
+        else:
+            for item in items:
+                total_processed += 1
+                if process_movie(dtdd, item, dry_run=dry_run):
+                    total_updated += 1
 
     elapsed = time.time() - start_time
     print(f"\n{'=' * 50}")
     print(f"Done in {elapsed:.1f}s")
-    print(f"Processed: {total_processed} movies")
-    print(f"Updated:   {total_updated} movies")
+    print(f"Processed: {total_processed} items")
+    print(f"Updated:   {total_updated} items")
     if dry_run:
         print("(DRY RUN — no actual changes made)")
 

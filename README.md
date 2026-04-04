@@ -1,21 +1,21 @@
 # DoesTheDogWatchPlex
 
-Add content warnings from [DoesTheDogDie.com](https://www.doesthedogdie.com) to your Plex movie summaries — so anyone browsing your library can see trigger warnings without leaving the Plex interface.
+Add content warnings from [DoesTheDogDie.com](https://www.doesthedogdie.com) to your Plex movie and TV show summaries — so anyone browsing your library can see trigger warnings without leaving the Plex interface.
 
 Rebuilt from [valknight/DoesTheDogWatchPlex](https://github.com/valknight/DoesTheDogWatchPlex) (2018) for modern Plex and the current DTDD API.
 
 ## What It Does
 
-For each movie in your Plex library, the script:
+For each movie or TV show episode in your Plex library, the script:
 
 1. Matches it to DoesTheDogDie.com (by IMDB ID first, then title/year)
 2. Fetches community-voted content warnings (animal death, sexual assault, etc.)
-3. Appends a formatted warning block to the movie's summary in Plex
+3. Appends a formatted warning block to the summary in Plex
 
 The result looks like this in Plex:
 
 ```
-Original movie summary here...
+Original summary here...
 
 ———— Content Warnings (via DoesTheDogDie.com) ————
 ⚠️  a dog dies · an animal is sad · someone is buried alive
@@ -23,6 +23,10 @@ Original movie summary here...
 ```
 
 Warnings are filtered by vote count and confidence ratio, so you only see things the community is reasonably sure about.
+
+### TV Show Support
+
+For TV shows, the script matches at the show level and then applies episode-specific warnings to each episode's summary. DTDD community votes are tagged per season and episode, so warnings reflect what actually happens in that episode rather than the show as a whole.
 
 ## Setup
 
@@ -130,7 +134,8 @@ All settings are in `config.py`. Key options:
 
 | Setting | Env Var | Default | Description |
 |---|---|---|---|
-| `PLEX_LIBRARIES` | `PLEX_LIBRARIES` | `["Movies"]` | Which libraries to process. `None`/empty = all movie libraries |
+| `PLEX_LIBRARY_TYPES` | `PLEX_LIBRARY_TYPES` | `["movies"]` | Which library types to process. Options: `"movies"`, `"tv_shows"` |
+| `PLEX_LIBRARIES` | `PLEX_LIBRARIES` | `["Movies"]` | Which libraries to process by name. `None` = all libraries matching `PLEX_LIBRARY_TYPES` |
 | `MIN_YES_VOTES` | `MIN_YES_VOTES` | `5` | Minimum "yes" votes to include a warning |
 | `MIN_YES_RATIO` | `MIN_YES_RATIO` | `0.7` | Minimum ratio of yes/(yes+no) to flag a warning |
 | `SHOW_SAFE_TOPICS` | `SHOW_SAFE_TOPICS` | `False` | Include the ✅ "safe" list (e.g., "no dogs die") |
@@ -141,6 +146,23 @@ All settings are in `config.py`. Key options:
 | `CACHE_TTL` | - | `604800` | Cache duration in seconds (default: 7 days) |
 | `DRY_RUN` | `DRY_RUN` | `False` | Set to `True` to preview without writing |
 | - | `SCHEDULE` | - | Docker only: seconds between re-runs (e.g., `86400` for daily) |
+
+### Processing TV Shows
+
+Set `PLEX_LIBRARY_TYPES` to include `"tv_shows"` to process TV libraries:
+
+```python
+# config.py — movies only (default)
+PLEX_LIBRARY_TYPES = ["movies"]
+
+# TV shows only
+PLEX_LIBRARY_TYPES = ["tv_shows"]
+
+# Both
+PLEX_LIBRARY_TYPES = ["movies", "tv_shows"]
+```
+
+`PLEX_LIBRARIES` still works as a name filter on top of this — set it to `None` to process all libraries of the configured types, or list specific library names.
 
 ## Topic Filtering
 
@@ -192,7 +214,8 @@ If both are set, `INCLUDE_TOPICS` takes priority and `EXCLUDE_TOPICS` is ignored
 
 ## How It Works
 
-- **Matching:** Tries IMDB ID first (via Plex's GUID metadata), then falls back to title+year search against the DTDD API.
+- **Matching (movies):** Tries IMDB ID first (via Plex's GUID metadata), then falls back to title+year search against the DTDD API.
+- **Matching (TV shows):** Matches at the show level (IMDB ID → title search), fetches the full episode stats once, then filters in memory per episode using DTDD's season/episode index fields. One API call per show, not per episode.
 - **Caching:** API responses are cached locally in `.cache/` as JSON files to avoid hammering DTDD on re-runs.
 - **Idempotent:** Safe to re-run. Existing warnings are stripped and replaced with fresh data each time.
 - **Reversible:** `--clear` removes all DTDD-added content from summaries, restoring originals.

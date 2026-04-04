@@ -10,8 +10,11 @@ PLEX_URL = "http://localhost:32400"
 # Or see: https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/
 PLEX_TOKEN = "your-plex-token-here"
 
+# Which library types to process. Options: "movies", "tv_shows"
+PLEX_LIBRARY_TYPES = ["movies"]
+
 # Library names to process (case-sensitive, as they appear in Plex)
-# Set to None to process ALL movie libraries
+# Set to None to process ALL libraries matching PLEX_LIBRARY_TYPES
 PLEX_LIBRARIES = ["Movies"]
 
 # --- DoesTheDogDie Settings ---
