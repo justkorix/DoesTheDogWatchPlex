@@ -1,0 +1,16 @@
+# Local configuration (contains secrets)
+config.py
+
+# Virtual environment
+venv/
+
+# DTDD API cache
+.cache/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
